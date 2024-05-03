@@ -10,17 +10,26 @@ All outputs are in the `logs` folder.
 Testing psnr 34.67910163402557 (avg)<br>
 Generated images & video are in `logs/nerf_synthetic/dvgo_lego/render_test_fine_last_new/`<br>
 These images can be used for style transfer.<br>
-[![Lego using NeRF (vanilla DVGO)]](logs/nerf_synthetic/dvgo_lego/render_test_fine_last_new/video.rgb.mp4)
+
+https://github.com/diptyaroop/CS674_Spring24/assets/48976139/591e5120-f3fc-4a00-ad76-dcc8c12502d0
+
+**Lego using NeRF (vanilla DVGO)**
 
 2. Lego: Pipeline: Nerf (using DVGO), then Style transfer. <br>
 Images & video after style transfer are in `logs/nerf_synthetic/lego_nerf_sty/`<br>
-[![Lego using NeRF followed by ST]](logs/nerf_synthetic/lego_nerf_sty/lego_nerf_sty_video.mp4)
+
+https://github.com/diptyaroop/CS674_Spring24/assets/48976139/6722d105-0011-4b41-812d-5246e7665549
+
+**Lego using NeRF followed by ST**
 
 3. Lego: Pipeline: Style transfer, then NeRF (using DVGO). <br>
 We first used style transfer on vanilla NeRF synthetic images. Then, we ran DVGO.<br>
 Testing psnr 19.06837311387062 (avg)<br>
 NeRF generated images & video are in `logs/nerf_synthetic/lego_sty_nerf/`<br>
-[![Lego using ST followed by NeRF]](logs/nerf_synthetic/lego_sty_nerf/video.rgb.mp4)
+
+https://github.com/diptyaroop/CS674_Spring24/assets/48976139/91a89e75-48d5-4204-a5a1-4f14ea87f8b9
+
+**Lego using ST followed by NeRF**
 
 4. Bottle (Generated. **Work in progress**): Checking how DVGO works on a new dataset<br>
 Testing PSNR around 28. (Taking a few hours if the fine grid resolution is 160x160x160. Changed this to 128x128x128 to speed up. Now taking around an hour. Lower PSNR maybe due to this reason)<br>
