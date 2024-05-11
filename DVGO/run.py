@@ -50,7 +50,6 @@ def config_parser():
     parser.add_argument("--eval_lpips_alex", action='store_true')
     parser.add_argument("--eval_lpips_vgg", action='store_true')
     parser.add_argument("--eval_coarse_grid", action="store_true") # [DM] render video after only training wrt coarse grid
-    parser.add_argument("--mrhe", action="store_true") # [DM] enable multi-resolution hash encoding instead of fine-stage reconstruction
 
     # logging/saving options
     parser.add_argument("--i_print",   type=int, default=500,
@@ -749,19 +748,6 @@ if __name__=='__main__':
         dmin, dmax = np.percentile(depths_vis[bgmaps < 0.1], q=[5, 95])
         depth_vis = plt.get_cmap('rainbow')(1 - np.clip((depths_vis - dmin) / (dmax - dmin), 0, 1)).squeeze()[..., :3]
         imageio.mimwrite(os.path.join(testsavedir, 'video.depth.mp4'), utils.to8b(depth_vis), fps=30, quality=8)
-
-    # [DM] trial code for multi-resolution hash encoding
-    if args.mrhe:
-        print("Multi-resolution hash encoding: start")
-        eps_time = time.time()
-        multi_resolution_hash_encoding(images=rgbs, depths=depths, bgmaps=bgmaps, 
-                                       render_poses=data_dict['render_poses'],
-                HW=data_dict['HW'][data_dict['i_test']][[0]].repeat(len(data_dict['render_poses']), 0),
-                Ks=data_dict['Ks'][data_dict['i_test']][[0]].repeat(len(data_dict['render_poses']), 0),
-                savedir=testsavedir, dump_images=args.dump_images)
-                
-        eps_time = time.time() - eps_time
-        print('Multi-resolution hash encoding: finish (eps time:', eps_time, 'secs)')
 
     print('Done')
 

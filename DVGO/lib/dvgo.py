@@ -73,33 +73,36 @@ class DirectVoxGO(torch.nn.Module):
         self.k0_config = k0_config
         self.rgbnet_full_implicit = rgbnet_full_implicit
         if rgbnet_dim <= 0:
-            # color voxel grid  (coarse stage)
-            self.k0_dim = 3
-            self.k0 = grid.create_grid(
-                k0_type, channels=self.k0_dim, world_size=self.world_size,
-                xyz_min=self.xyz_min, xyz_max=self.xyz_max,
-                config=self.k0_config)
-            self.rgbnet = None
+            # # color voxel grid  (coarse stage)
+            # self.k0_dim = 3
+            # self.k0 = grid.create_grid(
+            #     k0_type, channels=self.k0_dim, world_size=self.world_size,
+            #     xyz_min=self.xyz_min, xyz_max=self.xyz_max,
+            #     config=self.k0_config)
+            # self.rgbnet = None
+            pass
         else:
             # feature voxel grid + shallow MLP  (fine stage)
-
+            print("INIT COMES HERE")
             self.configHash = None
             with open("./lib/config_hash.json") as f:
                 self.configHash = json.load(f)
 
             self.hashEncoding = tcnn.Encoding(n_input_dims=3, encoding_config=self.configHash["encoding"], dtype=torch.float32)
-            self.hashNet = tcnn.Network(self.hashEncoding.n_output_dims, 3, self.configHash["network"])
-            self.hashModel = torch.nn.Sequential(self.hashEncoding, self.hashNet)
-            print(self.hashModel)
+            # self.hashNet = tcnn.Network(self.hashEncoding.n_output_dims, 3, self.configHash["network"])
+            # self.hashModel = torch.nn.Sequential(self.hashEncoding, self.hashNet)
+            # print(self.hashModel)
+
+            rgbnet_dim = self.hashEncoding.n_output_dims
 
             if self.rgbnet_full_implicit:
                 self.k0_dim = 0
             else:
                 self.k0_dim = rgbnet_dim
-            self.k0 = grid.create_grid(
-                    k0_type, channels=self.k0_dim, world_size=self.world_size,
-                    xyz_min=self.xyz_min, xyz_max=self.xyz_max,
-                    config=self.k0_config)
+            # self.k0 = grid.create_grid(
+            #         k0_type, channels=self.k0_dim, world_size=self.world_size,
+            #         xyz_min=self.xyz_min, xyz_max=self.xyz_max,
+            #         config=self.k0_config)
             self.rgbnet_direct = rgbnet_direct
             self.register_buffer('viewfreq', torch.FloatTensor([(2**i) for i in range(viewbase_pe)]))
             dim0 = (3+3*viewbase_pe*2)
@@ -118,7 +121,8 @@ class DirectVoxGO(torch.nn.Module):
                 nn.Linear(rgbnet_width, 3),
             )
             nn.init.constant_(self.rgbnet[-1].bias, 0)
-            print('dvgo: feature voxel grid', self.k0)
+            # print('dvgo: feature voxel grid', self.k0)
+            print('dvgo: hash grid', self.hashEncoding)
             print('dvgo: mlp', self.rgbnet)
 
         # Using the coarse geometry if provided (used to determine known free space and unknown space)
@@ -354,31 +358,30 @@ class DirectVoxGO(torch.nn.Module):
         if self.rgbnet_full_implicit:
             pass
         else:
-            k0 = self.k0(ray_pts)
+            # k0 = self.k0(ray_pts)
+            hashEncoding = self.hashEncoding(ray_pts)
 
         if self.rgbnet is None:
             # no view-depend effect
-            rgb = torch.sigmoid(k0)
+            # rgb = torch.sigmoid(k0)
+            print("rgbnet none")
+            exit(0)
         else:
-            # view-dependent color emission
-            # if self.rgbnet_direct:
-            #     k0_view = k0
+            #view-dependent color emission
+            if self.rgbnet_direct:
+                # k0_view = k0
+                k0_view = hashEncoding
             # else:
             #     k0_view = k0[:, 3:]
             #     k0_diffuse = k0[:, :3]
             
-            # viewdirs_emb = (viewdirs.unsqueeze(-1) * self.viewfreq).flatten(-2)
-            hashEncoding = self.hashEncoding(viewdirs)
-            # viewdirs_emb = torch.cat([viewdirs, viewdirs_emb.sin(), viewdirs_emb.cos()], -1)
-            # viewdirs_emb1 = torch.cat([viewdirs, hashEncoding], -1)
-            # viewdirs_emb = viewdirs_emb.flatten(0,-2)[ray_id]
-            viewdirs_emb1 = hashEncoding.flatten(0,-2)[ray_id]
-            # rgb_feat = torch.cat([k0_view, viewdirs_emb], -1)
-            rgb_feat1 = viewdirs_emb1
-            # rgb_logit = self.rgbnet(rgb_feat)
-            rgb = self.hashNet(rgb_feat1)
-            # if self.rgbnet_direct:
-            #     rgb = torch.sigmoid(rgb_logit)
+            viewdirs_emb = (viewdirs.unsqueeze(-1) * self.viewfreq).flatten(-2)
+            viewdirs_emb = torch.cat([viewdirs, viewdirs_emb.sin(), viewdirs_emb.cos()], -1)
+            viewdirs_emb = viewdirs_emb.flatten(0,-2)[ray_id]
+            rgb_feat = torch.cat([k0_view, viewdirs_emb], -1)
+            rgb_logit = self.rgbnet(rgb_feat)
+            if self.rgbnet_direct:
+                rgb = torch.sigmoid(rgb_logit)
             # else:
             #     rgb = torch.sigmoid(rgb_logit + k0_diffuse)
 
