@@ -56,9 +56,9 @@ parser.add_argument('--style_dir', default='./style', type=str,
 parser.add_argument('--output', type=str, default='output',
                     help='Directory to save the output image(s)')
 parser.add_argument('--vgg', type=str, default='./experiments/vgg_normalised.pth')
-parser.add_argument('--decoder_path', type=str, default='experiments/decoder_iter_160000.pth')
-parser.add_argument('--Trans_path', type=str, default='experiments/transformer_iter_160000.pth')
-parser.add_argument('--embedding_path', type=str, default='experiments/embedding_iter_160000.pth')
+parser.add_argument('--decoder_path', type=str, default='experiments/decoder_iter_25000.pth')
+parser.add_argument('--Trans_path', type=str, default='experiments/transformer_iter_25000.pth')
+parser.add_argument('--embedding_path', type=str, default='experiments/embedding_iter_25000.pth')
 
 
 parser.add_argument('--style_interpolation_weights', type=str, default="")
@@ -151,9 +151,7 @@ style_tf = test_transform(style_size, crop)
 
 for content_path in content_paths:
     for style_path in style_paths:
-        print(content_path)
-       
-      
+
         content_tf1 = content_transform()       
         content = content_tf(Image.open(content_path).convert("RGB"))
 
@@ -170,10 +168,11 @@ for content_path in content_paths:
         #print(output)       
         output = output[0].cpu()
                 
-        output_name = '{:s}/{:s}_stylized_{:s}{:s}'.format(
-            output_path, splitext(basename(content_path))[0],
-            splitext(basename(style_path))[0], save_ext
-        )
+        output_name = '{:s}/{:s}/{:s}_stylized{:s}'.format(
+            output_path, splitext(basename(style_path))[0], splitext(basename(content_path))[0], save_ext)
+        
+        if not(os.path.isdir('{:s}/{:s}'.format(output_path, splitext(basename(style_path))[0]))):
+            os.mkdir('{:s}/{:s}'.format(output_path, splitext(basename(style_path))[0]))
  
         save_image(output, output_name)
    
