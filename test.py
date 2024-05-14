@@ -43,11 +43,11 @@ def content_transform():
 
 parser = argparse.ArgumentParser()
 # Basic options
-parser.add_argument('--content', default='./content', type=str,
+parser.add_argument('--content', type=str,
                     help='File path to the content image')
 parser.add_argument('--content_dir', default='./content', type=str,
                     help='Directory path to a batch of content images')
-parser.add_argument('--style', default='./style', type=str,
+parser.add_argument('--style', type=str,
                     help='File path to the style image, or multiple style \
                     images separated by commas if you want to do style \
                     interpolation or spatial control')
