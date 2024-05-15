@@ -50,7 +50,7 @@ def config_parser():
     parser.add_argument("--eval_lpips_alex", action='store_true')
     parser.add_argument("--eval_lpips_vgg", action='store_true')
     parser.add_argument("--eval_coarse_grid", action="store_true") # [DM] render video after only training wrt coarse grid
-    parser.add_argument("--mrhe", action="store_true") # [DM] enable multi-resolution hash encoding instead of fine-stage reconstruction
+    parser.add_argument("--stylized", action="store_true") # [DM] stylized_views
 
     # logging/saving options
     parser.add_argument("--i_print",   type=int, default=500,
@@ -83,7 +83,7 @@ def render_viewpoints(model, render_poses, HW, Ks, render_kwargs,
     lpips_alex = []
     lpips_vgg = []
 
-    print("[DM] test model:", model)
+    # print("[DM] test model:", model)
 
     for i, c2w in enumerate(tqdm(render_poses)):
 
@@ -170,8 +170,16 @@ def load_everything(args, cfg):
     '''
     defaultDataDir = cfg.data.datadir
     newDataDir = "."+defaultDataDir
-    print(defaultDataDir, newDataDir)
+
+    if (args.stylized is True):
+        newDataDir = newDataDir+"_stylized"
+        newExpname = cfg.expname+"_stylized"
+        cfg.update(expname=newExpname)
+
+    
+    # print(defaultDataDir, newDataDir)
     cfg.data.update(datadir=newDataDir)
+    
     data_dict = load_data(cfg.data)
 
     # remove useless field
@@ -240,9 +248,9 @@ def compute_bbox_by_coarse_geo(model_class, model_path, thres):
 def create_new_model(cfg, cfg_model, cfg_train, xyz_min, xyz_max, stage, coarse_ckpt_path):
     model_kwargs = copy.deepcopy(cfg_model)
     num_voxels = model_kwargs.pop('num_voxels')
-    print("[DM]: no. of voxels = ", num_voxels)
+    # print("[DM]: no. of voxels = ", num_voxels)
     if len(cfg_train.pg_scale):
-        print("[DM] ", cfg_train.pg_scale)
+        # print("[DM] ", cfg_train.pg_scale)
         num_voxels = int(num_voxels / (2**len(cfg_train.pg_scale)))
 
     print(f'scene_rep_reconstruction ({stage}): \033[96muse dense voxel grid\033[0m')
@@ -252,7 +260,7 @@ def create_new_model(cfg, cfg_model, cfg_train, xyz_min, xyz_max, stage, coarse_
         mask_cache_path=coarse_ckpt_path,
         **model_kwargs)
     model = model.to(device)
-    print("[DM]: device = ", device)
+    # print("[DM]: device = ", device)
     optimizer = utils.create_optimizer_or_freeze_model(model, cfg_train, global_step=0)
     return model, optimizer
 
@@ -278,7 +286,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         ]
     ]
 
-    print("[DM] scene_rep_reconstruction, stage=", stage) # [DM]
+    # print("[DM] scene_rep_reconstruction, stage=", stage) # [DM]
 
     # find whether there is existing checkpoint path
     last_ckpt_path = os.path.join(cfg.basedir, cfg.expname, f'{stage}_last.tar')
@@ -506,8 +514,8 @@ def train(args, cfg, data_dict):
     # coarse geometry searching (only works for inward bounded scenes)
     eps_coarse = time.time()
     xyz_min_coarse, xyz_max_coarse = compute_bbox_by_cam_frustrm(args=args, cfg=cfg, **data_dict)
-    print("[DM]", xyz_min_coarse, xyz_max_coarse)
-    print("[DM] coarse_train.N iters: ", cfg.coarse_train.N_iters) # [DM]
+    # print("[DM]", xyz_min_coarse, xyz_max_coarse)
+    # print("[DM] coarse_train.N iters: ", cfg.coarse_train.N_iters) # [DM]
     if cfg.coarse_train.N_iters > 0:
         scene_rep_reconstruction(
                 args=args, cfg=cfg,
@@ -533,7 +541,7 @@ def train(args, cfg, data_dict):
         xyz_min_fine, xyz_max_fine = compute_bbox_by_coarse_geo(
                 model_class=dvgo.DirectVoxGO, model_path=coarse_ckpt_path,
                 thres=cfg.fine_model_and_render.bbox_thres)
-        print(xyz_min_coarse, xyz_max_coarse, xyz_min_fine, xyz_max_fine)
+        # print(xyz_min_coarse, xyz_max_coarse, xyz_min_fine, xyz_max_fine)
     scene_rep_reconstruction(
             args=args, cfg=cfg,
             cfg_model=cfg.fine_model_and_render, cfg_train=cfg.fine_train,
@@ -570,7 +578,7 @@ if __name__=='__main__':
     else:
         device = torch.device('cpu')
 
-    print("[DM]: device: ", device)
+    # print("[DM]: device: ", device)
     seed_everything()
 
     # load images / poses / camera settings / data split
@@ -662,7 +670,7 @@ if __name__=='__main__':
 
     # render testset and eval
     if args.render_test:
-        testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_test_{ckpt_name}_new')
+        testsavedir = os.path.join(cfg.basedir, cfg.expname, f'hash_render_test_{ckpt_name}_new')
         os.makedirs(testsavedir, exist_ok=True)
         print('All results are dumped into', testsavedir)
         rgbs, depths, bgmaps = render_viewpoints(
@@ -673,7 +681,7 @@ if __name__=='__main__':
                 savedir=testsavedir, dump_images=args.dump_images,
                 eval_ssim=args.eval_ssim, eval_lpips_alex=args.eval_lpips_alex, eval_lpips_vgg=args.eval_lpips_vgg,
                 **render_viewpoints_kwargs)
-        print("[DM] TEST: Num images: ", rgbs.shape)
+        # print("[DM] TEST: Num images: ", rgbs.shape)
         # [DM] TODO: Commenting for now. Uncomment later
         imageio.mimwrite(os.path.join(testsavedir, 'video.rgb.mp4'), utils.to8b(rgbs), fps=30, quality=8)
         imageio.mimwrite(os.path.join(testsavedir, 'video.depth.mp4'), utils.to8b(1 - depths / np.max(depths)), fps=30, quality=8)
