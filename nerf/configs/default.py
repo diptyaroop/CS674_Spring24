@@ -32,7 +32,7 @@ coarse_train = dict(
     lrate_k0=1e-1,                # lr of color/feature voxel grid
     lrate_rgbnet=1e-3,            # lr of the mlp to preduct view-dependent color
     lrate_decay=20,               # lr decay by 0.1 after every lrate_decay*1000 steps
-    pervoxel_lr=True,             # view-count-based lr
+    pervoxel_lr=False,             # view-count-based lr
     pervoxel_lr_downrate=1,       # downsampled image for computing view-count-based lr
     ray_sampler='random',         # ray sampling strategies
     weight_main=1.0,              # weight of photometric loss
@@ -58,11 +58,13 @@ fine_train.update(dict(
     ray_sampler='in_maskcache',
     weight_entropy_last=0.001,
     weight_rgbper=0.01,
-    pg_scale=[], #[1000, 2000, 3000, 4000],
-    skip_zero_grad_fields=['density', 'k0', 'hashEncoding', 'hashDensity'],
+    pg_scale=[1000, 2000, 3000, 4000],
+    skip_zero_grad_fields=[], #'density', 'k0', 'hashEncoding', 'hashDensity'],
     lrate_hashEncoding=1e-1,
     lrate_hashDensity=1e-1,
 ))
+fine_train.pop("lrate_density", None)
+fine_train.pop("lrate_k0", None)
 
 ''' Template of model and rendering options
 '''
@@ -81,8 +83,8 @@ coarse_model_and_render = dict(
     rgbnet_dim=0,                 # feature voxel grid dim
     rgbnet_full_implicit=False,   # let the colors MLP ignore feature voxel grid
     rgbnet_direct=True,           # set to False to treat the first 3 dim of feature voxel grid as diffuse rgb
-    rgbnet_depth=2,               # depth of the colors MLP (there are rgbnet_depth-1 intermediate features)
-    rgbnet_width=64,             # width of the colors MLP
+    rgbnet_depth=3,               # depth of the colors MLP (there are rgbnet_depth-1 intermediate features)
+    rgbnet_width=128,             # width of the colors MLP
     alpha_init=1e-6,              # set the alpha values everywhere at the begin of training
     fast_color_thres=1e-7,        # threshold of alpha value to skip the fine stage sampled point
     maskout_near_cam_vox=True,    # maskout grid points that between cameras and their near planes

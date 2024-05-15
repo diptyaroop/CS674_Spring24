@@ -68,17 +68,17 @@ class DirectVoxGO(torch.nn.Module):
         self.k0_type = k0_type
         self.k0_config = k0_config
         self.rgbnet_full_implicit = rgbnet_full_implicit
+
+        # init density voxel grid
+        self.density_type = density_type
+        self.density_config = density_config
+        self.density = grid.create_grid(
+                density_type, channels=1, world_size=self.world_size,
+                xyz_min=self.xyz_min, xyz_max=self.xyz_max,
+                config=self.density_config)
         
         if rgbnet_dim <= 0:
             # color voxel grid  (coarse stage)
-
-             # # init density voxel grid
-            self.density_type = density_type
-            self.density_config = density_config
-            self.density = grid.create_grid(
-                    density_type, channels=1, world_size=self.world_size,
-                    xyz_min=self.xyz_min, xyz_max=self.xyz_max,
-                    config=self.density_config)
 
             self.k0_dim = 3
             self.k0 = grid.create_grid(
@@ -92,13 +92,13 @@ class DirectVoxGO(torch.nn.Module):
             # self.embed = he.HashEmbedder(bounding_box=(self.xyz_min, self.xyz_max))
             # self.hash_out_dim = self.embed.out_dim
 
-            self.hashDensity = tcnn.NetworkWithInputEncoding(n_input_dims=3, n_output_dims=16, 
+            self.hashDensity = tcnn.NetworkWithInputEncoding(n_input_dims=3, n_output_dims=1, 
                                                              encoding_config=config["encoding"], network_config=config["network"]).to(cdevice)
 
             self.hashEncoding = tcnn.Encoding(n_input_dims=3, encoding_config=config["encoding"], dtype=torch.float32).to(cdevice)
             self.hash_out_dim = self.hashEncoding.n_output_dims
 
-            rgbnet_dim = self.hash_out_dim
+            rgbnet_dim = self.hash_out_dim + 1
 
             if self.rgbnet_full_implicit:
                 self.k0_dim = 0
@@ -209,7 +209,7 @@ class DirectVoxGO(torch.nn.Module):
         print('dvgo: scale_volume_grid scale world_size from', ori_world_size.tolist(), 'to', self.world_size.tolist())
 
         self.density.scale_volume_grid(self.world_size)
-        self.k0.scale_volume_grid(self.world_size)
+        # self.k0.scale_volume_grid(self.world_size)
 
         if np.prod(self.world_size.tolist()) <= 256**3:
             self_grid_xyz = torch.stack(torch.meshgrid(
@@ -390,7 +390,9 @@ class DirectVoxGO(torch.nn.Module):
             viewdirs_emb = (viewdirs.unsqueeze(-1) * self.viewfreq).flatten(-2)
             viewdirs_emb = torch.cat([viewdirs, viewdirs_emb.sin(), viewdirs_emb.cos()], -1)
             viewdirs_emb = viewdirs_emb.flatten(0,-2)[ray_id]
-            rgb_feat = torch.cat([k0_view, viewdirs_emb], -1)
+
+            rgb_feat = torch.cat([density, k0_view], -1) # [DM]
+            rgb_feat = torch.cat([rgb_feat, viewdirs_emb], -1)
             rgb_logit = self.rgbnet(rgb_feat)
             if self.rgbnet_direct:
                 rgb = torch.sigmoid(rgb_logit)
