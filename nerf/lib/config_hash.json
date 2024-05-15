@@ -1,6 +1,6 @@
 {
 	"loss": {
-		"otype": "RelativeL2"
+		"otype": "L2" // RelativeL2
 	},
 	"optimizer": {
 		"otype": "Adam",
@@ -18,12 +18,12 @@
 		"n_levels": 8,            // Number of levels (resolutions)
 		"n_features_per_level": 2, // Dimensionality of feature vector
 								   // stored in each level's entries.
-		"log2_hashmap_size": 19,   // If type is "Hash", is the base-2
+		"log2_hashmap_size": 14,   // If type is "Hash", is the base-2
 								   // logarithm of the number of elements
 								   // in each backing hash table.
 		"base_resolution": 16,     // The resolution of the coarsest le-
 								   // vel is base_resolution^input_dims.
-		"per_level_scale": 2,    // The geometric growth factor, i.e.
+		"per_level_scale": 1.5,    // The geometric growth factor, i.e.
 								   // the factor by which the resolution
 								   // of each grid is larger (per axis)
 								   // than that of the preceding level.
@@ -32,11 +32,18 @@
 								   // or "Smoothstep" (for smooth deri-
 								   // vatives).
 	},
+	"viewdir_encoding": {
+		"otype": "SphericalHarmonics", // Component type.
+		"degree": 4                    // The SH degree up to which
+									   // to evaluate the encoding.
+									   // Produces degree^2 encoded
+									   // dimensions.
+	},
 	"network": {
 		"otype": "FullyFusedMLP",
 		"activation": "ReLU",
 		"output_activation": "None",
 		"n_neurons": 64,
-		"n_hidden_layers": 2
+		"n_hidden_layers": 1
 	}
 }

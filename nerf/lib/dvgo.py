@@ -41,6 +41,10 @@ class DirectVoxGO(torch.nn.Module):
         self.register_buffer('xyz_min', torch.Tensor(xyz_min))
         self.register_buffer('xyz_max', torch.Tensor(xyz_max))
         self.fast_color_thres = fast_color_thres
+        cdevice = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        with open("lib/config_hash.json") as f:
+            config = json.load(f)
 
         # determine based grid resolution
         self.num_voxels_base = num_voxels_base
@@ -54,14 +58,6 @@ class DirectVoxGO(torch.nn.Module):
         # determine init grid resolution
         self._set_grid_resolution(num_voxels)
 
-        # init density voxel grid
-        self.density_type = density_type
-        self.density_config = density_config
-        self.density = grid.create_grid(
-                density_type, channels=1, world_size=self.world_size,
-                xyz_min=self.xyz_min, xyz_max=self.xyz_max,
-                config=self.density_config)
-
         # init color representation
         self.rgbnet_kwargs = {
             'rgbnet_dim': rgbnet_dim, 'rgbnet_direct': rgbnet_direct,
@@ -72,37 +68,46 @@ class DirectVoxGO(torch.nn.Module):
         self.k0_type = k0_type
         self.k0_config = k0_config
         self.rgbnet_full_implicit = rgbnet_full_implicit
+        
         if rgbnet_dim <= 0:
-            # # color voxel grid  (coarse stage)
-            # self.k0_dim = 3
-            # self.k0 = grid.create_grid(
-            #     k0_type, channels=self.k0_dim, world_size=self.world_size,
-            #     xyz_min=self.xyz_min, xyz_max=self.xyz_max,
-            #     config=self.k0_config)
-            # self.rgbnet = None
-            pass
+            # color voxel grid  (coarse stage)
+
+             # # init density voxel grid
+            self.density_type = density_type
+            self.density_config = density_config
+            self.density = grid.create_grid(
+                    density_type, channels=1, world_size=self.world_size,
+                    xyz_min=self.xyz_min, xyz_max=self.xyz_max,
+                    config=self.density_config)
+
+            self.k0_dim = 3
+            self.k0 = grid.create_grid(
+                k0_type, channels=self.k0_dim, world_size=self.world_size,
+                xyz_min=self.xyz_min, xyz_max=self.xyz_max,
+                config=self.k0_config)
+            self.rgbnet = None
         else:
             # feature voxel grid + shallow MLP  (fine stage)
-            print("INIT COMES HERE")
-            self.configHash = None
-            with open("./lib/config_hash.json") as f:
-                self.configHash = json.load(f)
 
-            self.hashEncoding = tcnn.Encoding(n_input_dims=3, encoding_config=self.configHash["encoding"], dtype=torch.float32)
-            # self.hashNet = tcnn.Network(self.hashEncoding.n_output_dims, 3, self.configHash["network"])
-            # self.hashModel = torch.nn.Sequential(self.hashEncoding, self.hashNet)
-            # print(self.hashModel)
+            # self.embed = he.HashEmbedder(bounding_box=(self.xyz_min, self.xyz_max))
+            # self.hash_out_dim = self.embed.out_dim
 
-            rgbnet_dim = self.hashEncoding.n_output_dims
+            self.hashDensity = tcnn.NetworkWithInputEncoding(n_input_dims=3, n_output_dims=16, 
+                                                             encoding_config=config["encoding"], network_config=config["network"]).to(cdevice)
+
+            self.hashEncoding = tcnn.Encoding(n_input_dims=3, encoding_config=config["encoding"], dtype=torch.float32).to(cdevice)
+            self.hash_out_dim = self.hashEncoding.n_output_dims
+
+            rgbnet_dim = self.hash_out_dim
 
             if self.rgbnet_full_implicit:
                 self.k0_dim = 0
             else:
                 self.k0_dim = rgbnet_dim
-            # self.k0 = grid.create_grid(
-            #         k0_type, channels=self.k0_dim, world_size=self.world_size,
-            #         xyz_min=self.xyz_min, xyz_max=self.xyz_max,
-            #         config=self.k0_config)
+                # self.k0 = grid.create_grid(
+                #     k0_type, channels=self.k0_dim, world_size=self.world_size,
+                #     xyz_min=self.xyz_min, xyz_max=self.xyz_max,
+                #     config=self.k0_config)
             self.rgbnet_direct = rgbnet_direct
             self.register_buffer('viewfreq', torch.FloatTensor([(2**i) for i in range(viewbase_pe)]))
             dim0 = (3+3*viewbase_pe*2)
@@ -119,11 +124,11 @@ class DirectVoxGO(torch.nn.Module):
                     for _ in range(rgbnet_depth-2)
                 ],
                 nn.Linear(rgbnet_width, 3),
-            )
+            ).to(cdevice)
             nn.init.constant_(self.rgbnet[-1].bias, 0)
             # print('dvgo: feature voxel grid', self.k0)
-            print('dvgo: hash grid', self.hashEncoding)
-            print('dvgo: mlp', self.rgbnet)
+            # print("dvgo: hashgrid", self.embed)
+            # print('dvgo: mlp', self.rgbnet)
 
         # Using the coarse geometry if provided (used to determine known free space and unknown space)
         # Re-implement as occupancy grid (2021/1/31)
@@ -158,8 +163,8 @@ class DirectVoxGO(torch.nn.Module):
         print('dvgo: voxel_size_base ', self.voxel_size_base)
         print('dvgo: voxel_size_ratio', self.voxel_size_ratio)
 
-    def get_kwargs(self):
-        return {
+    def get_kwargs(self, stage):
+        model_kwargs = {
             'xyz_min': self.xyz_min.cpu().numpy(),
             'xyz_max': self.xyz_max.cpu().numpy(),
             'num_voxels': self.num_voxels,
@@ -170,12 +175,17 @@ class DirectVoxGO(torch.nn.Module):
             'mask_cache_thres': self.mask_cache_thres,
             'mask_cache_world_size': list(self.mask_cache.mask.shape),
             'fast_color_thres': self.fast_color_thres,
-            'density_type': self.density_type,
-            'k0_type': self.k0_type,
-            'density_config': self.density_config,
-            'k0_config': self.k0_config,
             **self.rgbnet_kwargs,
         }
+
+        if (stage == "coarse"):
+            model_kwargs.update(
+                density_type=self.density_type,
+                density_config=self.density_config,
+                k0_type=self.k0_type,
+                k0_config=self.k0_config,
+            )
+        return  model_kwargs
 
     @torch.no_grad()
     def maskout_near_cam_vox(self, cam_o, near_clip):
@@ -334,8 +344,13 @@ class DirectVoxGO(torch.nn.Module):
             step_id = step_id[mask]
 
         # query for alpha w/ post-activation
-        density = self.density(ray_pts)
-        alpha = self.activate_density(density, interval)
+        if (self.rgbnet is None):
+            density = self.density(ray_pts)
+            alpha = self.activate_density(density, interval)
+        else:
+            density = self.hashDensity(ray_pts)
+            alpha = density[:, 0].to(torch.float32)
+            alpha = self.activate_density(alpha, interval)
         if self.fast_color_thres > 0:
             mask = (alpha > self.fast_color_thres)
             ray_pts = ray_pts[mask]
@@ -353,24 +368,21 @@ class DirectVoxGO(torch.nn.Module):
             ray_pts = ray_pts[mask]
             ray_id = ray_id[mask]
             step_id = step_id[mask]
+            density = density[mask] # [DM] hashgrid
 
         # query for color
-        if self.rgbnet_full_implicit:
-            pass
-        else:
-            # k0 = self.k0(ray_pts)
-            hashEncoding = self.hashEncoding(ray_pts)
 
         if self.rgbnet is None:
             # no view-depend effect
-            # rgb = torch.sigmoid(k0)
-            print("rgbnet none")
-            exit(0)
+            k0 = self.k0(ray_pts)
+            rgb = torch.sigmoid(k0)
         else:
-            #view-dependent color emission
-            if self.rgbnet_direct:
-                # k0_view = k0
-                k0_view = hashEncoding
+            # view-dependent color emission
+            # k0_view = self.embed(ray_pts)
+            k0_view = self.hashEncoding(ray_pts)
+            # k0_view = self.k0(ray_pts)
+            # if self.rgbnet_direct:
+            #     k0_view = k0
             # else:
             #     k0_view = k0[:, 3:]
             #     k0_diffuse = k0[:, :3]
@@ -382,9 +394,8 @@ class DirectVoxGO(torch.nn.Module):
             rgb_logit = self.rgbnet(rgb_feat)
             if self.rgbnet_direct:
                 rgb = torch.sigmoid(rgb_logit)
-            # else:
-            #     rgb = torch.sigmoid(rgb_logit + k0_diffuse)
 
+        
         # Ray marching
         rgb_marched = segment_coo(
                 src=(weights.unsqueeze(-1) * rgb),
@@ -518,37 +529,14 @@ def get_rays_np(H, W, K, c2w):
     rays_o = np.broadcast_to(c2w[:3,3], np.shape(rays_d))
     return rays_o, rays_d
 
-
-def ndc_rays(H, W, focal, near, rays_o, rays_d):
-    # Shift ray origins to near plane
-    t = -(near + rays_o[...,2]) / rays_d[...,2]
-    rays_o = rays_o + t[...,None] * rays_d
-
-    # Projection
-    o0 = -1./(W/(2.*focal)) * rays_o[...,0] / rays_o[...,2]
-    o1 = -1./(H/(2.*focal)) * rays_o[...,1] / rays_o[...,2]
-    o2 = 1. + 2. * near / rays_o[...,2]
-
-    d0 = -1./(W/(2.*focal)) * (rays_d[...,0]/rays_d[...,2] - rays_o[...,0]/rays_o[...,2])
-    d1 = -1./(H/(2.*focal)) * (rays_d[...,1]/rays_d[...,2] - rays_o[...,1]/rays_o[...,2])
-    d2 = -2. * near / rays_o[...,2]
-
-    rays_o = torch.stack([o0,o1,o2], -1)
-    rays_d = torch.stack([d0,d1,d2], -1)
-
-    return rays_o, rays_d
-
-
-def get_rays_of_a_view(H, W, K, c2w, ndc, inverse_y, flip_x, flip_y, mode='center'):
+def get_rays_of_a_view(H, W, K, c2w, inverse_y, flip_x, flip_y, mode='center'):
     rays_o, rays_d = get_rays(H, W, K, c2w, inverse_y=inverse_y, flip_x=flip_x, flip_y=flip_y, mode=mode)
     viewdirs = rays_d / rays_d.norm(dim=-1, keepdim=True)
-    if ndc:
-        rays_o, rays_d = ndc_rays(H, W, K[0][0], 1., rays_o, rays_d)
     return rays_o, rays_d, viewdirs
 
 
 @torch.no_grad()
-def get_training_rays(rgb_tr, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_y):
+def get_training_rays(rgb_tr, train_poses, HW, Ks, inverse_y, flip_x, flip_y):
     print('get_training_rays: start')
     assert len(np.unique(HW, axis=0)) == 1
     assert len(np.unique(Ks.reshape(len(Ks),-1), axis=0)) == 1
@@ -562,7 +550,7 @@ def get_training_rays(rgb_tr, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_
     imsz = [1] * len(rgb_tr)
     for i, c2w in enumerate(train_poses):
         rays_o, rays_d, viewdirs = get_rays_of_a_view(
-                H=H, W=W, K=K, c2w=c2w, ndc=ndc, inverse_y=inverse_y, flip_x=flip_x, flip_y=flip_y)
+                H=H, W=W, K=K, c2w=c2w, inverse_y=inverse_y, flip_x=flip_x, flip_y=flip_y)
         rays_o_tr[i].copy_(rays_o.to(rgb_tr.device))
         rays_d_tr[i].copy_(rays_d.to(rgb_tr.device))
         viewdirs_tr[i].copy_(viewdirs.to(rgb_tr.device))
@@ -573,7 +561,7 @@ def get_training_rays(rgb_tr, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_
 
 
 @torch.no_grad()
-def get_training_rays_flatten(rgb_tr_ori, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_y):
+def get_training_rays_flatten(rgb_tr_ori, train_poses, HW, Ks, inverse_y, flip_x, flip_y):
     print('get_training_rays_flatten: start')
     assert len(rgb_tr_ori) == len(train_poses) and len(rgb_tr_ori) == len(Ks) and len(rgb_tr_ori) == len(HW)
     eps_time = time.time()
@@ -588,7 +576,7 @@ def get_training_rays_flatten(rgb_tr_ori, train_poses, HW, Ks, ndc, inverse_y, f
     for c2w, img, (H, W), K in zip(train_poses, rgb_tr_ori, HW, Ks):
         assert img.shape[:2] == (H, W)
         rays_o, rays_d, viewdirs = get_rays_of_a_view(
-                H=H, W=W, K=K, c2w=c2w, ndc=ndc,
+                H=H, W=W, K=K, c2w=c2w,
                 inverse_y=inverse_y, flip_x=flip_x, flip_y=flip_y)
         n = H * W
         rgb_tr[top:top+n].copy_(img.flatten(0,1))
@@ -605,7 +593,7 @@ def get_training_rays_flatten(rgb_tr_ori, train_poses, HW, Ks, ndc, inverse_y, f
 
 
 @torch.no_grad()
-def get_training_rays_in_maskcache_sampling(rgb_tr_ori, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_y, model, render_kwargs):
+def get_training_rays_in_maskcache_sampling(rgb_tr_ori, train_poses, HW, Ks, inverse_y, flip_x, flip_y, model, render_kwargs):
     print('get_training_rays_in_maskcache_sampling: start')
     assert len(rgb_tr_ori) == len(train_poses) and len(rgb_tr_ori) == len(Ks) and len(rgb_tr_ori) == len(HW)
     CHUNK = 64
@@ -621,7 +609,7 @@ def get_training_rays_in_maskcache_sampling(rgb_tr_ori, train_poses, HW, Ks, ndc
     for c2w, img, (H, W), K in zip(train_poses, rgb_tr_ori, HW, Ks):
         assert img.shape[:2] == (H, W)
         rays_o, rays_d, viewdirs = get_rays_of_a_view(
-                H=H, W=W, K=K, c2w=c2w, ndc=ndc,
+                H=H, W=W, K=K, c2w=c2w,
                 inverse_y=inverse_y, flip_x=flip_x, flip_y=flip_y)
         mask = torch.empty(img.shape[:2], device=DEVICE, dtype=torch.bool)
         for i in range(0, img.shape[0], CHUNK):

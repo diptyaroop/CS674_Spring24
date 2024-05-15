@@ -21,31 +21,18 @@ data = dict(
     half_res=False,               # [TODO]
     bd_factor=.75,
     movie_render_kwargs=dict(),
-
-    # Below are forward-facing llff specific settings.
-    ndc=False,                    # use ndc coordinate (only for forward-facing; not support yet)
-    spherify=False,               # inward-facing
-    factor=4,                     # [TODO]
-    width=None,                   # enforce image width
-    height=None,                  # enforce image height
-    llffhold=8,                   # testsplit
-    load_depths=False,            # load depth
-
-    # Below are unbounded inward-facing specific settings.
-    unbounded_inward=False,
-    unbounded_inner_r=1.0,
 )
 
 ''' Template of training options
 '''
 coarse_train = dict(
-    N_iters=5000,                 # number of optimization steps # [DM] 5000
+    N_iters=5000,                 # number of optimization steps
     N_rand=8192,                  # batch size (number of random rays per optimization step)
     lrate_density=1e-1,           # lr of density voxel grid
     lrate_k0=1e-1,                # lr of color/feature voxel grid
     lrate_rgbnet=1e-3,            # lr of the mlp to preduct view-dependent color
     lrate_decay=20,               # lr decay by 0.1 after every lrate_decay*1000 steps
-    pervoxel_lr=False,             # view-count-based lr # [DM] True
+    pervoxel_lr=True,             # view-count-based lr
     pervoxel_lr_downrate=1,       # downsampled image for computing view-count-based lr
     ray_sampler='random',         # ray sampling strategies
     weight_main=1.0,              # weight of photometric loss
@@ -62,7 +49,6 @@ coarse_train = dict(
     pg_scale=[],                  # checkpoints for progressive scaling
     decay_after_scale=1.0,        # decay act_shift after scaling
     skip_zero_grad_fields=[],     # the variable name to skip optimizing parameters w/ zero grad in each iteration
-    maskout_lt_nviews=0,
 )
 
 fine_train = deepcopy(coarse_train)
@@ -73,7 +59,9 @@ fine_train.update(dict(
     weight_entropy_last=0.001,
     weight_rgbper=0.01,
     pg_scale=[], #[1000, 2000, 3000, 4000],
-    skip_zero_grad_fields=['density', 'k0'],
+    skip_zero_grad_fields=['density', 'k0', 'hashEncoding', 'hashDensity'],
+    lrate_hashEncoding=1e-1,
+    lrate_hashDensity=1e-1,
 ))
 
 ''' Template of model and rendering options
@@ -85,17 +73,16 @@ coarse_model_and_render = dict(
     k0_type='DenseGrid',          # DenseGrid, TensoRFGrid
     density_config=dict(),
     k0_config=dict(),
-    mpi_depth=128,                # the number of planes in Multiplane Image (work when ndc=True)
     nearest=False,                # nearest interpolation
     pre_act_density=False,        # pre-activated trilinear interpolation
     in_act_density=False,         # in-activated trilinear interpolation
     bbox_thres=1e-3,              # threshold to determine known free-space in the fine stage
     mask_cache_thres=1e-3,        # threshold to determine a tighten BBox in the fine stage
-    rgbnet_dim=12,                 # feature voxel grid dim  # [DM] Change to 0
+    rgbnet_dim=0,                 # feature voxel grid dim
     rgbnet_full_implicit=False,   # let the colors MLP ignore feature voxel grid
     rgbnet_direct=True,           # set to False to treat the first 3 dim of feature voxel grid as diffuse rgb
-    rgbnet_depth=3,               # depth of the colors MLP (there are rgbnet_depth-1 intermediate features)
-    rgbnet_width=64,             # width of the colors MLP # [DM] 64
+    rgbnet_depth=2,               # depth of the colors MLP (there are rgbnet_depth-1 intermediate features)
+    rgbnet_width=64,             # width of the colors MLP
     alpha_init=1e-6,              # set the alpha values everywhere at the begin of training
     fast_color_thres=1e-7,        # threshold of alpha value to skip the fine stage sampled point
     maskout_near_cam_vox=True,    # maskout grid points that between cameras and their near planes

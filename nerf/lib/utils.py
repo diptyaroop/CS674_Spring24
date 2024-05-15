@@ -128,4 +128,3 @@ def rgb_lpips(np_gt, np_im, net_name, device):
     gt = torch.from_numpy(np_gt).permute([2, 0, 1]).contiguous().to(device)
     im = torch.from_numpy(np_im).permute([2, 0, 1]).contiguous().to(device)
     return __LPIPS__[net_name](gt, im, normalize=True).item()
-

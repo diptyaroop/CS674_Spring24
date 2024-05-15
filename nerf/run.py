@@ -50,6 +50,7 @@ def config_parser():
     parser.add_argument("--eval_lpips_alex", action='store_true')
     parser.add_argument("--eval_lpips_vgg", action='store_true')
     parser.add_argument("--eval_coarse_grid", action="store_true") # [DM] render video after only training wrt coarse grid
+    parser.add_argument("--mrhe", action="store_true") # [DM] enable multi-resolution hash encoding instead of fine-stage reconstruction
 
     # logging/saving options
     parser.add_argument("--i_print",   type=int, default=500,
@@ -60,7 +61,7 @@ def config_parser():
 
 
 @torch.no_grad()
-def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
+def render_viewpoints(model, render_poses, HW, Ks, render_kwargs,
                       gt_imgs=None, savedir=None, dump_images=False,
                       render_factor=0, render_video_flipy=False, render_video_rot90=0,
                       eval_ssim=False, eval_lpips_alex=False, eval_lpips_vgg=False):
@@ -82,13 +83,15 @@ def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
     lpips_alex = []
     lpips_vgg = []
 
+    print("[DM] test model:", model)
+
     for i, c2w in enumerate(tqdm(render_poses)):
 
         H, W = HW[i]
         K = Ks[i]
         c2w = torch.Tensor(c2w)
         rays_o, rays_d, viewdirs = dvgo.get_rays_of_a_view(
-                H, W, K, c2w, ndc, inverse_y=render_kwargs['inverse_y'],
+                H, W, K, c2w, inverse_y=render_kwargs['inverse_y'],
                 flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y)
         keys = ['rgb_marched', 'depth', 'alphainv_last']
         rays_o = rays_o.flatten(0,-2)
@@ -121,11 +124,6 @@ def render_viewpoints(model, render_poses, HW, Ks, ndc, render_kwargs,
                 lpips_alex.append(utils.rgb_lpips(rgb, gt_imgs[i], net_name='alex', device=c2w.device))
             if eval_lpips_vgg:
                 lpips_vgg.append(utils.rgb_lpips(rgb, gt_imgs[i], net_name='vgg', device=c2w.device))
-
-        # [DM] TODO: Remove later. Breaking loop after 1 image for faster debugging
-        # if (i==0):
-        #     print("[DM] For faster debug, breaking after 1 image")
-        #     break
 
     if len(psnrs):
         print('Testing psnr', np.mean(psnrs), '(avg)')
@@ -170,6 +168,10 @@ def seed_everything():
 def load_everything(args, cfg):
     '''Load images / poses / camera settings / data split.
     '''
+    defaultDataDir = cfg.data.datadir
+    newDataDir = "."+defaultDataDir
+    print(defaultDataDir, newDataDir)
+    cfg.data.update(datadir=newDataDir)
     data_dict = load_data(cfg.data)
 
     # remove useless field
@@ -196,43 +198,17 @@ def _compute_bbox_by_cam_frustrm_bounded(cfg, HW, Ks, poses, i_train, near, far)
     for (H, W), K, c2w in zip(HW[i_train], Ks[i_train], poses[i_train]):
         rays_o, rays_d, viewdirs = dvgo.get_rays_of_a_view(
                 H=H, W=W, K=K, c2w=c2w,
-                ndc=cfg.data.ndc, inverse_y=cfg.data.inverse_y,
+                inverse_y=cfg.data.inverse_y,
                 flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y)
-        if cfg.data.ndc:
-            pts_nf = torch.stack([rays_o+rays_d*near, rays_o+rays_d*far])
-        else:
-            pts_nf = torch.stack([rays_o+viewdirs*near, rays_o+viewdirs*far])
+        pts_nf = torch.stack([rays_o+viewdirs*near, rays_o+viewdirs*far])
         xyz_min = torch.minimum(xyz_min, pts_nf.amin((0,1,2)))
         xyz_max = torch.maximum(xyz_max, pts_nf.amax((0,1,2)))
     return xyz_min, xyz_max
 
-def _compute_bbox_by_cam_frustrm_unbounded(cfg, HW, Ks, poses, i_train, near_clip):
-    # Find a tightest cube that cover all camera centers
-    xyz_min = torch.Tensor([np.inf, np.inf, np.inf])
-    xyz_max = -xyz_min
-    for (H, W), K, c2w in zip(HW[i_train], Ks[i_train], poses[i_train]):
-        rays_o, rays_d, viewdirs = dvgo.get_rays_of_a_view(
-                H=H, W=W, K=K, c2w=c2w,
-                ndc=cfg.data.ndc, inverse_y=cfg.data.inverse_y,
-                flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y)
-        pts = rays_o + rays_d * near_clip
-        xyz_min = torch.minimum(xyz_min, pts.amin((0,1)))
-        xyz_max = torch.maximum(xyz_max, pts.amax((0,1)))
-    center = (xyz_min + xyz_max) * 0.5
-    radius = (center - xyz_min).max() * cfg.data.unbounded_inner_r
-    xyz_min = center - radius
-    xyz_max = center + radius
-    return xyz_min, xyz_max
-
 def compute_bbox_by_cam_frustrm(args, cfg, HW, Ks, poses, i_train, near, far, **kwargs):
     print('compute_bbox_by_cam_frustrm: start')
-    if cfg.data.unbounded_inward:
-        xyz_min, xyz_max = _compute_bbox_by_cam_frustrm_unbounded(
-                cfg, HW, Ks, poses, i_train, kwargs.get('near_clip', None))
-
-    else:
-        xyz_min, xyz_max = _compute_bbox_by_cam_frustrm_bounded(
-                cfg, HW, Ks, poses, i_train, near, far)
+    xyz_min, xyz_max = _compute_bbox_by_cam_frustrm_bounded(
+            cfg, HW, Ks, poses, i_train, near, far)
     print('compute_bbox_by_cam_frustrm: xyz_min', xyz_min)
     print('compute_bbox_by_cam_frustrm: xyz_max', xyz_max)
     print('compute_bbox_by_cam_frustrm: finish')
@@ -353,20 +329,20 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                     rgb_tr_ori=rgb_tr_ori,
                     train_poses=poses[i_train],
                     HW=HW[i_train], Ks=Ks[i_train],
-                    ndc=cfg.data.ndc, inverse_y=cfg.data.inverse_y,
+                    inverse_y=cfg.data.inverse_y,
                     flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y,
                     model=model, render_kwargs=render_kwargs)
         elif cfg_train.ray_sampler == 'flatten':
             rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz = dvgo.get_training_rays_flatten(
                 rgb_tr_ori=rgb_tr_ori,
                 train_poses=poses[i_train],
-                HW=HW[i_train], Ks=Ks[i_train], ndc=cfg.data.ndc, inverse_y=cfg.data.inverse_y,
+                HW=HW[i_train], Ks=Ks[i_train], inverse_y=cfg.data.inverse_y,
                 flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y)
         else:
             rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz = dvgo.get_training_rays(
                 rgb_tr=rgb_tr_ori,
                 train_poses=poses[i_train],
-                HW=HW[i_train], Ks=Ks[i_train], ndc=cfg.data.ndc, inverse_y=cfg.data.inverse_y,
+                HW=HW[i_train], Ks=Ks[i_train], inverse_y=cfg.data.inverse_y,
                 flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y)
         index_generator = dvgo.batch_indices_generator(len(rgb_tr), cfg_train.N_rand)
         batch_index_sampler = lambda: next(index_generator)
@@ -381,14 +357,9 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                     rays_o_tr=rays_o_tr, rays_d_tr=rays_d_tr, imsz=imsz, near=near, far=far,
                     stepsize=cfg_model.stepsize, downrate=cfg_train.pervoxel_lr_downrate,
                     irregular_shape=data_dict['irregular_shape'])
-            print("[DM] view count: ", cnt, cnt.shape)
             optimizer.set_pervoxel_lr(cnt)
             model.mask_cache.mask[cnt.squeeze() <= 2] = False
         per_voxel_init()
-
-    if cfg_train.maskout_lt_nviews > 0:
-        model.update_occupancy_cache_lt_nviews(
-                rays_o_tr, rays_d_tr, imsz, render_kwargs, cfg_train.maskout_lt_nviews)
 
     # GOGO
     torch.cuda.empty_cache()
@@ -398,7 +369,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
     for global_step in trange(1+start, 1+cfg_train.N_iters):
 
         # renew occupancy grid
-        if model.mask_cache is not None and (global_step + 500) % 1000 == 0:
+        if model.mask_cache is not None and (global_step + 500) % 1000 == 0 and stage == "coarse":
             model.update_occupancy_cache()
 
         # progress scaling checkpoint
@@ -513,7 +484,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
     if global_step != -1:
         torch.save({
             'global_step': global_step,
-            'model_kwargs': model.get_kwargs(),
+            'model_kwargs': model.get_kwargs(stage),
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
         }, last_ckpt_path)
@@ -562,6 +533,7 @@ def train(args, cfg, data_dict):
         xyz_min_fine, xyz_max_fine = compute_bbox_by_coarse_geo(
                 model_class=dvgo.DirectVoxGO, model_path=coarse_ckpt_path,
                 thres=cfg.fine_model_and_render.bbox_thres)
+        print(xyz_min_coarse, xyz_max_coarse, xyz_min_fine, xyz_max_fine)
     scene_rep_reconstruction(
             args=args, cfg=cfg,
             cfg_model=cfg.fine_model_and_render, cfg_train=cfg.fine_train,
@@ -577,28 +549,6 @@ def train(args, cfg, data_dict):
     print('train: finish (eps time', eps_time_str, ')')
 
 
-# [DM] Code for multi-resolution hash encoding
-def multi_resolution_hash_encoding(images, depths, bgmaps,
-                                   render_poses, HW, Ks, savedir=None, dump_images=False,
-                                   coarse_grid_resolution=None, hash_grid_resolution=None):
-    growth_factor_b = 1.5
-    n_min = coarse_grid_resolution
-    n_max = hash_grid_resolution
-
-    pi_1 = 1
-    pi_2 = 2654435761
-    pi_3 = 805459861
-
-    T = 2**24 # hash table size (configurable)
-    F = 2 # no. of feature dimensions per entry
-    dimension = 2 # change to 3 later if required
-
-    print(len(images), images.shape)
-    
-
-
-    return
-
 if __name__=='__main__':
 
     # load setup
@@ -608,7 +558,7 @@ if __name__=='__main__':
     cfg =  mmengine.Config.fromfile(args.config) # [DM] changes for latest version of mmcv & mmengine
 
     print("[DM]: Args: ", args) # all args specified in command line + default args
-    print("[DM]: config: ", cfg) # some config parameters from corresponding dataset config file, rest from default config file
+    # print("[DM]: config: ", cfg) # some config parameters from corresponding dataset config file, rest from default config file
 
     # init enviroment
     if torch.cuda.is_available():
@@ -639,7 +589,7 @@ if __name__=='__main__':
         cam_lst = []
         for c2w, (H, W), K in zip(poses[i_train], HW[i_train], Ks[i_train]):
             rays_o, rays_d, viewdirs = dvgo.get_rays_of_a_view(
-                    H, W, K, c2w, cfg.data.ndc, inverse_y=cfg.data.inverse_y,
+                    H, W, K, c2w, inverse_y=cfg.data.inverse_y,
                     flip_x=cfg.data.flip_x, flip_y=cfg.data.flip_y,)
             cam_o = rays_o[0,0].cpu().numpy()
             cam_d = rays_d[[0,0,-1,-1],[0,-1,0,-1]].cpu().numpy()
@@ -678,10 +628,10 @@ if __name__=='__main__':
         ckpt_name = ckpt_path.split('/')[-1][:-4]
         model_class = dvgo.DirectVoxGO
         model = utils.load_model(model_class, ckpt_path).to(device)
+        print("[DM] model at test time: ", model)
         stepsize = cfg.fine_model_and_render.stepsize
         render_viewpoints_kwargs = {
             'model': model,
-            'ndc': cfg.data.ndc,
             'render_kwargs': {
                 'near': data_dict['near'],
                 'far': data_dict['far'],
@@ -748,6 +698,7 @@ if __name__=='__main__':
         dmin, dmax = np.percentile(depths_vis[bgmaps < 0.1], q=[5, 95])
         depth_vis = plt.get_cmap('rainbow')(1 - np.clip((depths_vis - dmin) / (dmax - dmin), 0, 1)).squeeze()[..., :3]
         imageio.mimwrite(os.path.join(testsavedir, 'video.depth.mp4'), utils.to8b(depth_vis), fps=30, quality=8)
+
 
     print('Done')
 
