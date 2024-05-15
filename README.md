@@ -41,7 +41,7 @@ To replicate our results follow the following steps-
 * Download checkpoints [transformer](https://drive.google.com/file/d/1piKfMau1bGwzjZQNI9BM3nUccacUFOsv/view?usp=sharing), [decoder](https://drive.google.com/file/d/1ZW9SuSBcS7COdsRyK-9ywKZ9y-WPaX6X/view?usp=sharing), [embedding](https://drive.google.com/file/d/1mx8u8aiqgPtg7YtV3Q7WRjMJz8wJQzS6/view?usp=sharing), [vgg-model](https://drive.google.com/file/d/1BinnwM5AmIcVubr16tPTqxMjUCE8iu5M/view?usp=sharing) and place them in ./experiments directory
 * Run the Test file
     ```bash
-    python test.py
+    python test.py --content_dir ./content --style_dir ./style --output ./out
     ```
 
 ### Evaluating Style Transfer
