@@ -107,15 +107,20 @@ if __name__ == "__main__":
     firstMethod = args.first_method
     if firstMethod == "nerf":
         # os.chdir(cwd+"/nerf")
-        os.system(f"python3 run.py --config ./configs/nerf/{dataset}.py --seed {args.seed} 
-                  \--ft_path {args.ft_path} --export_bbox_and_cams_only {args.export_bbox_and_cams_only} --export_coarse_only {args.export_coarse_only} \
-                  --render_video_rot90 {args.render_video_rot90} --render_video_factor {args.render_video_factor} \
-                    --i_print {args.i_print} --i_weights {args.i_weights} " + nerf_append_string)
+        os.system(
+        f"python3 run.py --config ./configs/nerf/{dataset}.py --seed {args.seed} "
+        f"--ft_path {args.ft_path} --export_bbox_and_cams_only {args.export_bbox_and_cams_only} "
+        f"--export_coarse_only {args.export_coarse_only} --render_video_rot90 {args.render_video_rot90} "
+        f"--render_video_factor {args.render_video_factor} --i_print {args.i_print} "
+        f"--i_weights {args.i_weights} " + nerf_append_string
+        )
         # os.chdir('..')
-        #Then run style transfer
-        os.system(f"python3 st/test.py --content_dir ./nerf/logs/nerf_synthetic/{dataset} --output ./outputs/{dataset}_nerf_sty \
-                  --style_interpolation_weights {args.style_interpolation_weights} --a {args.a} \
-                    --positional_embedding {args.positional_embedding} --hidden_dim {args.hidden_dim}")
+        # Then run style transfer
+        os.system(
+            f"python3 st/test.py --content_dir ./nerf/logs/nerf_synthetic/{dataset} --output ./outputs/{dataset}_nerf_sty "
+            f"--style_interpolation_weights {args.style_interpolation_weights} --a {args.a} "
+            f"--position_embedding {args.position_embedding} --hidden_dim {args.hidden_dim}"
+        )
         #if sys.argv[3] == "eval":
         #    os.system("eval_metrics.py")
         # os.system(f"cp -r ./logs/nerf_synthetic/{dataset}_nerf_sty ./outputs/{dataset}_nerf_sty")
@@ -124,7 +129,7 @@ if __name__ == "__main__":
         #run style transfer
         os.system(f"python3 st/test.py --contentdir ../data/nerf_synthetic/{dataset} --output ../data/nerf_synthetic/{dataset}_stylized \
                   --style_interpolation_weights {args.style_interpolation_weights} --a {args.a} \
-                    --positional_embedding {args.positional_embedding} --hidden_dim {args.hidden_dim}")
+                    --position_embedding {args.position_embedding} --hidden_dim {args.hidden_dim}")
         #if sys.argv[3] == "eval":
         #    os.system("eval_metrics.py")
         os.system(f"python3 nerf/run.py --config configs/nerf/{dataset}.py--stylized --seed {args.seed} \
