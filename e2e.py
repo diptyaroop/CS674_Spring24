@@ -34,6 +34,7 @@ def config_parser():
     parser.add_argument("--eval_lpips_alex", action='store_true')
     parser.add_argument("--eval_lpips_vgg", action='store_true')
     parser.add_argument("--eval_coarse_grid", action="store_true") # [DM] render video after only training wrt coarse grid
+    parser.add_argument("--stylized", action="store_true") # [DM] stylized_views
 
     # logging/saving options
     parser.add_argument("--i_print",   type=int, default=500,
@@ -85,7 +86,6 @@ if __name__ == "__main__":
     inputPath = f"../data/nerf_synthetic/{dataset}/images"
     outputPath = None
     cwd = os.getcwd()
-    print(cwd)
 
     bool_to_var_nerf = {
         "--no_reload" : args.no_reload,
@@ -99,50 +99,60 @@ if __name__ == "__main__":
         "--eval_ssim" : args.eval_ssim,
         "--eval_lpips_alex" : args.eval_lpips_alex,
         "--eval_lpips_vgg" : args.eval_lpips_vgg,
-        "--eval_coarse_grid" : args.eval_coarse_grid
+        "--eval_coarse_grid" : args.eval_coarse_grid,
+        "--stylized" : args.stylized
     }
     nerf_append_string = ""
     for arg_name, arg_value in bool_to_var_nerf.items():
-        nerf_append_string += arg_name if arg_value else ""
+        nerf_append_string += " " + arg_name if arg_value else ""
     firstMethod = args.first_method
     if firstMethod == "nerf":
-        # os.chdir(cwd+"/nerf")
+        os.chdir(cwd+"/nerf")
         os.system(
-        f"python3 run.py --config ./configs/nerf/{dataset}.py --seed {args.seed} "
-        f"--ft_path {args.ft_path} --export_bbox_and_cams_only {args.export_bbox_and_cams_only} "
-        f"--export_coarse_only {args.export_coarse_only} --render_video_rot90 {args.render_video_rot90} "
-        f"--render_video_factor {args.render_video_factor} --i_print {args.i_print} "
-        f"--i_weights {args.i_weights} " + nerf_append_string
+        f"python3 run.py --config ./configs/nerf/{dataset}.py" + nerf_append_string
         )
-        # os.chdir('..')
+        os.chdir('..')
+        print("NeRF COMPONENT DONE")
+
         # Then run style transfer
+
+        os.system("rm st/content/*")
+        os.system(f"cp ./nerf/logs/nerf_synthetic/dvgo_{dataset}/hash_render_test_fine_last_new/*.png st/content/")
+        os.chdir(cwd+"/st")
         os.system(
-            f"python3 st/test.py --content_dir ./nerf/logs/nerf_synthetic/{dataset} --output ./outputs/{dataset}_nerf_sty "
-            f"--style_interpolation_weights {args.style_interpolation_weights} --a {args.a} "
+            f"python3 test.py --output ../outputs/{dataset}_nerf_sty "
+            f" --a {args.a} "
             f"--position_embedding {args.position_embedding} --hidden_dim {args.hidden_dim}"
         )
-        #if sys.argv[3] == "eval":
-        #    os.system("eval_metrics.py")
-        # os.system(f"cp -r ./logs/nerf_synthetic/{dataset}_nerf_sty ./outputs/{dataset}_nerf_sty")
-        outputPath = f"./outputs/{dataset}_nerf_sty"
+        os.chdir('..')
+        print("ST COMPONENT DONE")
+        outputPath = f"./outputs/{dataset}_nerf_sty/"
+        os.system(f"python3 scripts/stitchImagesToVideo.py {outputPath} {dataset}")
+        print("VIDEO CREATED")
     elif firstMethod == "sty":
-        #run style transfer
-        os.system(f"python3 st/test.py --contentdir ../data/nerf_synthetic/{dataset} --output ../data/nerf_synthetic/{dataset}_stylized \
-                  --style_interpolation_weights {args.style_interpolation_weights} --a {args.a} \
-                    --position_embedding {args.position_embedding} --hidden_dim {args.hidden_dim}")
-        #if sys.argv[3] == "eval":
-        #    os.system("eval_metrics.py")
-        os.system(f"python3 nerf/run.py --config configs/nerf/{dataset}.py--stylized --seed {args.seed} \
-                  --ft_path {args.ft_path} --export_bbox_and_cams_only {args.export_bbox_and_cams_only} --export_coarse_only {args.export_coarse_only} \
-                    --render_video_rot90 {args.render_video_rot90} --render_video_factor {args.render_video_factor} \
-                        --i_print {args.i_print} --i_weights {args.i_weights} " + nerf_append_string)
-        os.system(f"cp -r ./logs/nerf_synthetic/{dataset}_stylized ./outputs/{dataset}_sty_nerf")
+        # #run style transfer
+        # os.chdir(cwd+"/st")
+        # os.system(
+        #     f"python3 test.py --output ../outputs/{dataset}_nerf_sty "
+        #     f" --a {args.a} "
+        #     f"--position_embedding {args.position_embedding} --hidden_dim {args.hidden_dim}"
+        # )
+        # os.chdir('..')
+        # print("ST COMPONENT DONE")
+       
+        # os.chdir(cwd+"/nerf")
+        # os.system(
+        # f"python3 run.py --config ./configs/nerf/{dataset}.py" + nerf_append_string
+        # )
+        # os.chdir('..')
+        # print("NeRF COMPONENT DONE")
+        print("Due to time constraints we ewre not able to automate this. Please see the readme file for instructions on how to manually run this design.")
     else:
         print("Please choose either \"nerf\" or \"st\"")
         exit(0)
     
     # Stitching generated images into a video
-    os.system(f"python3 scripts/stitchImagesToVideo.py {outputPath}")
+   
 
     # os.system(f"python3 scripts/removeBG.py {inputPath} {outputPath}")
     

@@ -45,20 +45,20 @@ parser = argparse.ArgumentParser()
 # Basic options
 parser.add_argument('--content', default='./content', type=str,
                     help='File path to the content image')
-parser.add_argument('--content_dir', default='./content', type=str,
+parser.add_argument('--content_dir', default='./content/', type=str,
                     help='Directory path to a batch of content images')
 parser.add_argument('--style', default='./style', type=str,
                     help='File path to the style image, or multiple style \
                     images separated by commas if you want to do style \
                     interpolation or spatial control')
-parser.add_argument('--style_dir', default='./style', type=str,
+parser.add_argument('--style_dir', default='./style/', type=str,
                     help='Directory path to a batch of style images')
 parser.add_argument('--output', type=str, default='output',
                     help='Directory to save the output image(s)')
-parser.add_argument('--vgg', type=str, default='./experiments/vgg_normalised.pth')
-parser.add_argument('--decoder_path', type=str, default='experiments/decoder_iter_160000.pth')
-parser.add_argument('--Trans_path', type=str, default='experiments/transformer_iter_160000.pth')
-parser.add_argument('--embedding_path', type=str, default='experiments/embedding_iter_160000.pth')
+parser.add_argument('--vgg', type=str, default='./checkpoints/vgg_normalised.pth')
+parser.add_argument('--decoder_path', type=str, default='checkpoints/decoder_iter_25000.pth')
+parser.add_argument('--Trans_path', type=str, default='checkpoints/transformer_iter_25000.pth')
+parser.add_argument('--embedding_path', type=str, default='checkpoints/embedding_iter_25000.pth')
 
 
 parser.add_argument('--style_interpolation_weights', type=str, default="")
@@ -76,7 +76,7 @@ args = parser.parse_args()
 content_size=512
 style_size=512
 crop='store_true'
-save_ext='.jpg'
+save_ext='.png'
 output_path=args.output
 preserve_color='store_true'
 alpha=args.a
@@ -87,18 +87,19 @@ alpha=args.a
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # Either --content or --content_dir should be given.
-if args.content:
-    content_paths = [Path(args.content)]
-else:
-    content_dir = Path(args.content_dir)
-    content_paths = [f for f in content_dir.glob('*')]
+# if args.content:
+#     print("if")
+#     content_paths = [Path(args.content)]
+# else:
+content_dir = Path(args.content_dir)
+content_paths = [f for f in content_dir.glob('*')]
 
 # Either --style or --style_dir should be given.
-if args.style:
-    style_paths = [Path(args.style)]    
-else:
-    style_dir = Path(args.style_dir)
-    style_paths = [f for f in style_dir.glob('*')]
+# if args.style:
+#     style_paths = [Path(args.style)]    
+# else:
+style_dir = Path(args.style_dir)
+style_paths = [f for f in style_dir.glob('*')]
 
 if not os.path.exists(output_path):
     os.mkdir(output_path)
