@@ -64,6 +64,7 @@ pcd.points = o3d.utility.Vector3dVector(xyz / alpha.shape * (xyz_max - xyz_min) 
 pcd.colors = o3d.utility.Vector3dVector(color[:, :3])
 voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=max((xyz_max - xyz_min) / alpha.shape))
 
+
 def change_background_to_black(vis):
     opt = vis.get_render_option()
     opt.background_color = np.asarray([0, 0, 0])
